@@ -29,9 +29,7 @@ jobs:
       - name: Prepare pods and patch GoogleDataTransport
         run: |
           flutter build ios --release --no-codesign --no-sound-null-safety --config-only
-          cd ios
-          pod install
-          cd ..
+          chmod -R u+w ios/Pods/GoogleDataTransport
 
           python3 - <<'PY'
           from pathlib import Path
