@@ -26,9 +26,10 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Prepare pods and patch GoogleDataTransport
+      - name: Prepare pods and patch old iOS dependencies
         run: |
           flutter build ios --release --no-codesign --no-sound-null-safety --config-only
+
           chmod -R u+w ios/Pods/GoogleDataTransport
 
           python3 - <<'PY'
@@ -57,6 +58,29 @@ jobs:
                   path.write_text(new_text)
                   print(f"patched {path}")
           PY
+
+      - name: Fix Share Extension build settings
+        run: |
+          ruby - <<'RUBY'
+          require 'xcodeproj'
+
+          project = Xcodeproj::Project.open('ios/Runner.xcodeproj')
+          target = project.targets.find { |t| t.name == 'Share Extension' }
+
+          abort('Share Extension target not found') unless target
+
+          target.build_configurations.each do |config|
+            config.base_configuration_reference = nil
+            config.build_settings.delete('OTHER_LDFLAGS')
+            config.build_settings.delete('FRAMEWORK_SEARCH_PATHS')
+            config.build_settings.delete('LIBRARY_SEARCH_PATHS')
+            config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+            config.build_settings['ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES'] = '$(inherited)'
+            puts "fixed Share Extension #{config.name}"
+          end
+
+          project.save
+          RUBY
 
       - name: Build iOS app without signing
         run: flutter build ios --release --no-codesign --no-sound-null-safety
