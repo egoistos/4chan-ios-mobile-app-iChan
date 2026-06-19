@@ -26,6 +26,19 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Patch Dart package import casing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          for path in Path("lib").rglob("*.dart"):
+              text = path.read_text()
+              fixed = text.replace("package:iChan/", "package:ichan/")
+              if fixed != text:
+                  path.write_text(fixed)
+                  print(f"patched {path}")
+          PY
+
       - name: Prepare pods and patch old iOS dependencies
         run: |
           flutter build ios --release --no-codesign --no-sound-null-safety --config-only
