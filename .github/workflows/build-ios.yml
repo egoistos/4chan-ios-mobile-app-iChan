@@ -2,6 +2,8 @@ name: Build unsigned iOS IPA
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master, main]
 
 jobs:
   build-ios:
@@ -12,8 +14,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Rewrite SSH Git dependencies to HTTPS
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -22,11 +23,42 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
-
       - name: Get dependencies
         run: flutter pub get
+
+      - name: Prepare pods and patch GoogleDataTransport
+        run: |
+          flutter build ios --release --no-codesign --no-sound-null-safety --config-only
+          cd ios
+          pod install
+          cd ..
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              "GDTCORNetworkType GDTCORNetworkTypeMessage()": "GDTCORNetworkType GDTCORNetworkTypeMessage(void)",
+              "GDTCORNetworkMobileSubtype GDTCORNetworkMobileSubTypeMessage()": "GDTCORNetworkMobileSubtype GDTCORNetworkMobileSubTypeMessage(void)",
+              "NSString *_Nonnull GDTCORDeviceModel()": "NSString *_Nonnull GDTCORDeviceModel(void)",
+              "static int64_t KernelBootTimeInNanoseconds()": "static int64_t KernelBootTimeInNanoseconds(void)",
+              "static int64_t UptimeInNanoseconds()": "static int64_t UptimeInNanoseconds(void)",
+              "gdt_cct_ClientInfo GDTCCTConstructClientInfo()": "gdt_cct_ClientInfo GDTCCTConstructClientInfo(void)",
+              "gdt_cct_IosClientInfo GDTCCTConstructiOSClientInfo()": "gdt_cct_IosClientInfo GDTCCTConstructiOSClientInfo(void)",
+              "gdt_cct_MacClientInfo GDTCCTConstructMacClientInfo()": "gdt_cct_MacClientInfo GDTCCTConstructMacClientInfo(void)",
+              "NSData *GDTCCTConstructNetworkConnectionInfoData()": "NSData *GDTCCTConstructNetworkConnectionInfoData(void)",
+              "gdt_cct_NetworkConnectionInfo_MobileSubtype GDTCCTNetworkConnectionInfoNetworkMobileSubtype()": "gdt_cct_NetworkConnectionInfo_MobileSubtype GDTCCTNetworkConnectionInfoNetworkMobileSubtype(void)",
+          }
+
+          root = Path("ios/Pods/GoogleDataTransport")
+          for path in root.rglob("*.m"):
+              old_text = path.read_text()
+              new_text = old_text
+              for old, new in replacements.items():
+                  new_text = new_text.replace(old, new)
+              if new_text != old_text:
+                  path.write_text(new_text)
+                  print(f"patched {path}")
+          PY
 
       - name: Build iOS app without signing
         run: flutter build ios --release --no-codesign --no-sound-null-safety
